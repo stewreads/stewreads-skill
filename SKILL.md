@@ -1,97 +1,93 @@
 ---
 name: stewreads
-description: Optimize ebook creation workflow using Stewreads MCP tools. Use when user requests ebook generation, Kindle conversion, or wants to save content for reading on e-readers. Handles content formatting for Kindle devices, email management, and conversion orchestration.
+description: Save an ebook or a one-page brief to the user's StewReads library through the StewReads connector, or find and reopen something they saved there. Use when the user says "stew this", "send this to Stew" or "save this to StewReads", asks for an ebook or brief to keep and read later, or wants to continue from a saved StewReads item.
 ---
 
-# Stewreads Ebook Creation
+# StewReads
 
-## Overview
+StewReads is a personal library for documents made with AI. With the StewReads connector you can write an ebook or a brief and save it to the user's library, and find a saved item so the user can keep working from it.
 
-This skill optimizes the workflow for creating Kindle-optimized ebooks using the Stewreads MCP server. It ensures proper content formatting, email management, and seamless conversion to EPUB format for delivery to Kindle devices.
+## Before you start
 
-## Workflow
+This skill needs the StewReads connector (MCP server URL `https://mcp.stewreads.com/mcp`). If its tools are not available in this conversation, tell the user and point them to the setup guide at https://stewreads.com/help/mcp. Nothing can be saved without it.
 
-### Step 1: Check for Saved Kindle Email
+## Tools
 
-Always start by checking if the user has a saved Kindle email address:
+The connector has four tools. Your client may show them with a prefix.
 
-```
-stew:get_saved_kindle_email()
-```
+| Tool | What it does |
+| --- | --- |
+| `get_content_guidelines(content_type)` | Returns the writing guidelines for `ebook` or `brief`. |
+| `save(markdown, title, content_type)` | Adds a new item to the library. Optional: `filename`, `model_id`, `model_name`. |
+| `query(query, content_type)` | Lists saved items, newest first. Both arguments are optional. `query` text matches item titles. |
+| `fetch(artifact_id)` | Returns one saved item with its full markdown in `content`. |
 
-- If email exists: Proceed directly to content generation
-- If no email exists: Ask the user for their Kindle email address once
+`save`, `query` and `fetch` return `{success, data, error}`.
 
-### Step 2: Generate Ebook Content
+## Choose the content type
 
-Before generating content, read the detailed formatting guidelines:
+- `ebook`: long-form reading on a topic. Can be read in StewReads, emailed, or listened to as an audiobook.
+- `brief`: one short page that captures a single idea.
 
-```
-references/ebook-guidelines.md
-```
+Choose from what the user asked for, never from which AI client or model you are. If it is unclear which they want, ask once before saving.
 
-Key points when generating:
-- Follow the required structure: Title Page → Introduction → Chapters → Conclusion
-- Apply strict formatting rules (no images, tables, or complex layouts)
-- Keep paragraphs to 6-8 sentences maximum
-- Use only allowed Markdown elements
+## Save an ebook
 
-**Display behavior:**
-- If user wants to "send to Kindle" or "email to Kindle": Do NOT display content in Artifact. Generate and proceed directly to conversion.
-- If user wants to preview or convert only: Display content in Artifact for review.
+1. Call `get_content_guidelines(content_type="ebook")`.
+2. Write the ebook by those guidelines. Work out the topic the user wants to keep; if it is not clear, ask one short question. Write it as an original document in your own words, drawing on what the conversation worked out. Do not quote the user's messages or write "you asked" or "I said".
+3. Call `save` with the ebook as `markdown`, a clear `title`, `content_type="ebook"`, and the title as `filename`.
+4. Reply briefly with the saved title and the `reader_url` link from the result.
 
-### Step 3: Convert and Email
+If the user asked to save, there is no need to show the full text first. If they want to review it, show it and save after they confirm.
 
-Once content is generated, use:
+## Save a brief
 
-```
-stew:email_epub_to_kindle(
-    markdown: "<generated_content>",
-    title: "<descriptive_title>",
-    email: "<kindle_email_or_null>",
-    original_prompt: "<user_original_request>"
-)
-```
+1. Call `get_content_guidelines(content_type="brief")`.
+2. Write one brief in the shape the guidelines give. If the conversation holds several ideas worth keeping, suggest an ebook instead.
+3. Call `save` with the brief as `markdown`, its `title` and `content_type="brief"`.
+4. Reply briefly with the saved title and the `reader_url` link.
 
-Parameters:
-- `markdown`: The generated ebook content
-- `title`: Clear, descriptive title for the ebook
-- `email`: Use saved email if available, otherwise null (user will be prompted)
-- `original_prompt`: The user's original request for context
+Always call `get_content_guidelines` for the matching type before you write anything you will save. The guidelines can change, so do not write from memory.
 
-## Common Scenarios
+## Find a saved item and continue from it
 
-**Scenario 1: Quick conversion with saved email**
-```
-User: "Send an ebook about quantum mechanics to my Kindle"
-→ Check saved email
-→ Generate content following guidelines
-→ Convert and email (no Artifact display)
-```
+1. Call `query`. Pass `query` text to search titles, `content_type` to list only ebooks or only briefs, or neither to list everything. Results cover items saved from every AI client the user has connected; pass `include_all_clients=false` only if the user asks for items saved from this client alone.
+2. Call `fetch` with the `artifact_id` of the item the user means. If several items could match, ask which one.
+3. Work from the returned `content`.
 
-**Scenario 2: New user without saved email**
-```
-User: "Create an ebook about investing"
-→ Check saved email (returns null)
-→ Ask for Kindle email address
-→ Generate content
-→ Convert and email with provided address
-```
+`query` returns 20 items unless you pass `limit` (up to 100). Raise `offset` to see more.
 
-**Scenario 3: Preview before sending**
-```
-User: "Create an ebook about Python, I want to review it first"
-→ Generate content following guidelines
-→ Display in Artifact for review
-→ Wait for user confirmation before conversion
-```
+An item whose `source_format` is `epub` is an imported EPUB. `fetch` cannot return it.
 
-## Available MCP Tools
+`save` always creates a new item. It cannot update or replace one saved earlier. If the user asks to change a saved item, tell them that saving again adds a separate copy and the earlier one stays.
 
-- `stew:get_saved_kindle_email()` - Check for stored Kindle email
-- `stew:email_epub_to_kindle()` - Convert markdown to EPUB and email to Kindle
-- `stew:get_epub_system_prompt()` - Get system prompt (not needed with this skill)
+## What to tell the user about delivery
 
-## References
+No tool takes an email address, so do not ask the user for one. StewReads emails a saved ebook only when the user has turned on auto-send in StewReads, and only to the address they chose there, which can be a Kindle address. Briefs are never emailed.
 
-- `references/ebook-guidelines.md` - Detailed formatting and content generation rules
+After saving an ebook, read `delivery_status` in the result:
+
+| `delivery_status` | What to say |
+| --- | --- |
+| `skipped` | Saved. Not emailed, because auto-send is off. |
+| `not_configured` | Saved. Not emailed, because auto-send is on but its destination has no address. |
+| `queued` | Saved, and the email is waiting to go out. Do not say it was sent. |
+| `sent` | Saved, and the email was accepted for delivery to the address in `delivery_target_masked`. |
+| `failed` | Saved, but the email failed. |
+
+Auto-send and the delivery address are set in StewReads, not through the connector. The Kindle guide is at https://stewreads.com/help/kindle.
+
+## Limits
+
+- One save holds up to 200,000 characters of markdown and a title of up to 500 characters. A longer document has to be shortened or split into several saves.
+- Through these tools you cannot delete or change saved items, change settings, email an address typed in the chat, or start an audiobook. If asked, say so and point the user to StewReads.
+- The connector saves ebooks and briefs only. It does not save or retrieve coding-session notes, handoffs or other working files. If the user asks to save one, say so, and do not save it as an ebook or brief unless they ask for that. If they ask about such an item saved earlier, say the connector cannot list or fetch it; do not say it was deleted.
+
+## Errors
+
+When `success` is false, read `error.code` and `error.message`:
+
+- `UNAUTHORIZED`: ask the user to reconnect StewReads.
+- `VALIDATION_ERROR`: nothing was saved. Tell the user what the message says.
+- `NOT_FOUND`: the item does not exist or cannot be fetched with these tools.
+- `RATE_LIMITED` or `UPSTREAM_ERROR`: try again shortly if `error.retryable` is true. Before repeating a `save`, call `query` to check the item was not already added.
